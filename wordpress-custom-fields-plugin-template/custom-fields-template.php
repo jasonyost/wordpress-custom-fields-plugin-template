@@ -19,10 +19,17 @@ class SimpleCustomFields {
   private $post_path = 'test-page';
 
   // The header label for the custom fields form
-  private $header_label = 'Page custom fields';
+  protected $header_label = 'Page custom fields';
+
+  // Fields to add to the form defined with underscores
+  protected $fields = array(
+                      '_custom_field_one',
+                      '_custom_field_two',
+                      '_custom_field_three');
 
   public function __construct(){
     add_action( 'admin_init', array($this, 'init_custom_fields_form') );
+    add_action( 'save_post', array($this, 'save_custom_fields') );
   }
 
   public function init_custom_fields_form(){
@@ -39,10 +46,10 @@ class SimpleCustomFields {
   }
 
   public function scf_register_meta_boxes(){
-    add_meta_box('content_fields', 'Custom Fields', array($this, 'render_admin_form'));
+    add_meta_box('content_fields', $this->header_label, array($this, 'render_admin_form'), $post);
   }
 
-  public function show_scf_post_path_error(){
+  public function show_scf_post_path_error($error){
     ?>
       <div class="error notice">
         <p>
@@ -52,29 +59,80 @@ class SimpleCustomFields {
     <?php
   }
 
-  public function render_admin_form(){
-    $nonce_name = "scf_nonce_" . $this->post_path;
-    wp_nonce_field( $nonce_name, $nonce_name );
+  public function render_admin_form($post){
+    wp_nonce_field( "scf_nonce", "scf_nonce" );
       ?>
       <table class="form-table scf_table">
-
+        <?php foreach ($this->fields as $field): ?>
+          <?php $label = $this->get_field_label($field) ?>
+          <tr>
+            <th>
+              <label for="<?php echo $field ?>">
+                <?php _e( $label, 'scf_plugin' ); ?>
+              </label>
+            </th>
+            <td>
+              <input
+                type="text"
+                name="<?php echo $field ?>"
+                id="<?php echo $field ?>"
+                value="<?php echo get_post_meta($post->ID, $field, true) ?>" class="regular-text" />
+            </td>
+          </tr>
+        <?php endforeach; ?>
       </table>
       <?php
   }
+  public function save_custom_fields( $post_id ){
+
+    // Only save values if we are editing a selected post
+    if($this->get_selected_post_id() != $post_id)
+      return;
+
+
+    // verify nonce for security
+    $nonce = $_POST['scf_nonce'];
+    if ( empty( $nonce ) || !wp_verify_nonce( $nonce, "scf_nonce") )
+        return;
+
+    // don't save fields when doing autosave
+    if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE )
+      return;
+
+    // make sure the user is capable of editing this page
+    if ( !current_user_can( 'edit_post', $post_id ) )
+      return;
+
+    // update each of the fields
+    foreach ($this->fields as $field) {
+      update_post_meta( $post_id, $field, $_POST[$field] );
+    }
+
+  }
+
+  protected function get_field_label($field){
+    $arr = explode('_', $field);
+    $label = ucwords(implode(" ", $arr));
+    return $label;
+  }
 
   private function post_path_is_set(){
-    return isset($this->post_path);
+    return isset($this->post_path) && !empty($this->post_path);
+  }
+
+  protected function get_post_id(){
+    $post_id = (isset($_GET['post']) ? $_GET['post'] : 0);
+    return $post_id;
   }
 
   private function editing_selected_post(){
     $current_post_id = $this->get_post_id();
-    $selected_post_id = get_page_by_path($this->post_path)->ID;
+    $selected_post_id = $this->get_selected_post_id();
     return $current_post_id == $selected_post_id;
   }
 
-  private function get_post_id(){
-    $post_id = (isset($_GET['post']) ? $_GET['post'] : 0);
-    return $post_id;
+  private function get_selected_post_id(){
+    return get_page_by_path($this->post_path)->ID;
   }
 
 }
