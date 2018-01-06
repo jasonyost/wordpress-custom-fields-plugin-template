@@ -15,33 +15,51 @@ if( !class_exists('SimpleCustomFields') ):
 
 class SimpleCustomFields {
 
-  // The slug of the page/post to add custom fields
-  private $post_path = 'test-page';
-
-  // The header label for the custom fields form
-  protected $header_label = 'Page custom fields';
-
-  // Fields to add to the form defined with underscores
-  protected $fields = array(
-                      '_custom_field_one',
-                      '_custom_field_two',
-                      '_custom_field_three');
+  // Class variables, do not edit directly, set in the __construct method
+  private $post_path = '';
+  private $header_label = '';
+  private $fields = [];
+  private $errors = [];
 
   public function __construct(){
+
+    // BEGIN EDITABLE VALUES
+
+    // The permalink slug of the page on which the fields should appear
+    $this->set_post_slug('test-page');
+
+    // Set a descriptive header for the custom fields form
+    $this->set_form_header('Custom fields for this page');
+
+    // Add custom fields here defined with underscores
+    $this->add_custom_field('_custom_field_one');
+    $this->add_custom_field('_custom_field_two');
+    $this->add_custom_field('_custom_field_three');
+
+    // END EDITABLE VALUES
+
     add_action( 'admin_init', array($this, 'init_custom_fields_form') );
     add_action( 'save_post', array($this, 'save_custom_fields') );
   }
 
   public function init_custom_fields_form(){
-    $post_path_is_set = $this->post_path_is_set();
-    $editing_selected_post = $this->editing_selected_post();
 
-    if ($post_path_is_set) {
-      if ($editing_selected_post) {
+    // Validate plugin configuration
+    if (!$this->post_path_is_set())
+      $this->errors[] = 'Simple custom fields: Post path not set';
+
+    if(!$this->form_header_is_set())
+      $this->errors[] = 'Simple custom fields: Form header not set';
+
+    if(!$this->custom_fields_are_set())
+      $this->errors[] = 'Simple custom fields: Custom fields are not set';
+
+    if ($this->plugin_is_configured()) {
+      if ($this->editing_selected_post()) {
         add_action( 'add_meta_boxes', array($this, 'scf_register_meta_boxes') );
       }
     }else{
-      add_action( 'admin_notices', array($this, 'show_scf_post_path_error') );
+      add_action( 'admin_notices', array($this, 'display_error_messages') );
     }
   }
 
@@ -49,14 +67,16 @@ class SimpleCustomFields {
     add_meta_box('content_fields', $this->header_label, array($this, 'render_admin_form'), $post);
   }
 
-  public function show_scf_post_path_error($error){
-    ?>
-      <div class="error notice">
-        <p>
-          Simple Custom Fields: Post path not set
-        </p>
-      </div>
-    <?php
+  public function display_error_messages(){
+    foreach ($this->errors as $error_message) {
+      ?>
+        <div class="error notice">
+          <p>
+            <?php echo $error_message ?>
+          </p>
+        </div>
+      <?php
+    }
   }
 
   public function render_admin_form($post){
@@ -83,12 +103,12 @@ class SimpleCustomFields {
       </table>
       <?php
   }
+
   public function save_custom_fields( $post_id ){
 
     // Only save values if we are editing a selected post
     if($this->get_selected_post_id() != $post_id)
       return;
-
 
     // verify nonce for security
     $nonce = $_POST['scf_nonce'];
@@ -105,12 +125,37 @@ class SimpleCustomFields {
 
     // update each of the fields
     foreach ($this->fields as $field) {
-      update_post_meta( $post_id, $field, $_POST[$field] );
+      $cleaned_value = sanitize_text_field($_POST[$field]);
+      update_post_meta( $post_id, $field,  $cleaned_value);
     }
 
   }
 
-  protected function get_field_label($field){
+  private function set_post_slug($slug){
+    $this->post_path = $slug;
+  }
+
+  private function set_form_header($header_label){
+    $this->header_label = $header_label;
+  }
+
+  private function add_custom_field($field){
+    $this->fields[] = $field;
+  }
+
+  private function form_header_is_set(){
+    return isset($this->header_label) && !empty($this->header_label);
+  }
+
+  private function custom_fields_are_set(){
+    return isset($this->fields) && !empty($this->fields);
+  }
+
+  private function plugin_is_configured(){
+    return empty($this->errors);
+  }
+
+  private function get_field_label($field){
     $arr = explode('_', $field);
     $label = ucwords(implode(" ", $arr));
     return $label;
@@ -120,7 +165,7 @@ class SimpleCustomFields {
     return isset($this->post_path) && !empty($this->post_path);
   }
 
-  protected function get_post_id(){
+  private function get_post_id(){
     $post_id = (isset($_GET['post']) ? $_GET['post'] : 0);
     return $post_id;
   }
